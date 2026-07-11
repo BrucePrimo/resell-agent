@@ -6,11 +6,11 @@ from bs4 import BeautifulSoup
 import urllib.parse
 from streamlit_mic_recorder import speech_to_text
 
-# --- 1. CONFIGURATION ET DESIGN ---
-NOM_APPLI = "Primo Bruce 1 system"
-ICONE_APPLI = "⚡"
-SOUS_TITRE = "Expertise Argus & Estimations de Marché par Dictée Vocale"
-COULEUR_PRINCIPALE = "#1E293B"
+# --- CONFIGURATION ET DESIGN ---
+NOM_APPLI    = "Primo Bruce 1 system"    
+ICONE_APPLI  = "⚡"                      
+SOUS_TITRE   = "Expertise Argus & Estimations de Marché Professionnelles"
+COULEUR_PRINCIPALE = "#1E293B"          
 
 st.set_page_config(page_title=NOM_APPLI, page_icon=ICONE_APPLI, layout="wide")
 
@@ -23,7 +23,21 @@ st.markdown(f"""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. FONCTION DE RECHERCHE EBAY ---
+DISCOGS_TOKEN = st.secrets.get("DISCOGS_TOKEN", "")
+
+# --- FONCTIONS DE RECHERCHE ---
+def fetch_discogs_api(keywords):
+    if not DISCOGS_TOKEN: return []
+    query = urllib.parse.quote(keywords)
+    url = f"https://api.discogs.com/database/search?q={query}&type=release&per_page=8"
+    headers = {"User-Agent": "ResellAgentIA/1.0", "Authorization": f"Discogs token={DISCOGS_TOKEN}"}
+    try:
+        res = requests.get(url, headers=headers, timeout=5)
+        if res.status_code == 200:
+            return [{"Plateforme": "Discogs API", "Titre": item.get("title"), "Année": item.get("year", "N/C")} for item in res.json().get("results", [])]
+        return []
+    except: return []
+
 def fetch_ebay_sold(keywords):
     query = urllib.parse.quote(keywords)
     url = f"https://www.ebay.fr/sch/i.html?_nkw={query}&LH_Complete=1&LH_Sold=1"
@@ -38,7 +52,6 @@ def fetch_ebay_sold(keywords):
             if title_elem and price_elem:
                 title = title_elem.text.replace("Nouvelle annonce", "").strip()
                 p_txt = price_elem.text.replace("EUR", "").replace("€", "").replace(",", ".").replace(" ", "").strip()
-                if "à" in p_txt: p_txt = p_txt.split("à")[0]
                 try:
                     prix = float(''.join(c for c in p_txt if c.isdigit() or c == '.'))
                     ventes.append({"Plateforme": "eBay (Vendu)", "Titre": title, "Prix (€)": prix})
@@ -46,40 +59,30 @@ def fetch_ebay_sold(keywords):
         return ventes
     except: return []
 
-# --- 3. INTERFACE UTILISATEUR ---
+# --- INTERFACE ---
+with st.sidebar:
+    st.title("⚙️ Secteurs de Veille")
+    univers = st.radio("Univers :", ("📚 Bandes Dessinées", "🎵 Disques & Vinyles", "🏺 Objets de Collection & Mag", "⌚ Montres de Collection"))
+
 st.title(f"{ICONE_APPLI} {NOM_APPLI}")
-st.markdown(f"<p style='color:#64748b; font-size:16px; margin-top:-15px; margin-bottom:25px;'>{SOUS_TITRE}</p>", unsafe_allow_html=True)
 
-# Bloc Micro de dictée vocale épuré
-st.write("🎙️ **Cliquez ci-dessous pour dicter l'objet à haute voix :**")
+# Dictée vocale + saisie clavier combinées
+st.write("🎙️ **Dicter ou saisir l'objet :**")
 texte_dicte = speech_to_text(language='fr', start_prompt="▶️ Lancer l'écoute", stop_prompt="⏹️ Arrêter", key='dictation')
+query = st.text_input("Saisir ou modifier le texte :", value=texte_dicte if texte_dicte else "")
 
-# Champ de texte mis à jour
-if texte_dicte:
-    st.success(f"🗣️ Compris : **{texte_dicte}**")
-    query = st.text_input("Texte de recherche actuel :", value=texte_dicte)
-else:
-    query = st.text_input("Texte de recherche actuel :", value="")
+if query:
+    encoded_query = urllib.parse.quote(query)
+    cols_btn = st.columns(4)
+    with cols_btn[0]: st.markdown(f'<a href="https://www.leboncoin.fr/recherche?text={encoded_query}" target="_blank"><button style="width:100%; height:38px; background-color:#ff6e14; color:white; border:none; border-radius:4px; font-weight:bold;">🟠 LeBonCoin</button></a>', unsafe_allow_html=True)
+    with cols_btn[1]: st.markdown(f'<a href="https://www.vinted.fr/catalog?search_text={encoded_query}" target="_blank"><button style="width:100%; height:38px; background-color:#09b1ba; color:white; border:none; border-radius:4px; font-weight:bold;">🟢 Vinted</button></a>', unsafe_allow_html=True)
 
-st.write(" ")
-bouton_analyser = st.button("🚀 Extraire la valeur de l'objet et calculer l'argus", type="primary", use_container_width=True)
-
-if bouton_analyser and query:
-    with st.spinner("Analyse des prix en cours..."):
-        resultats_prix = fetch_ebay_sold(query)
-            
-        if resultats_prix:
-            df = pd.DataFrame(resultats_prix)
-            mediane = round(np.median(df["Prix (€)"]), 2)
-            plafond = round(max(df["Prix (€)"]), 2)
-            plancher = round(min(df["Prix (€)"]), 2)
-            
-            col1, col2, col3 = st.columns(3)
-            with col1: st.markdown(f'<div class="metric-box"><p style="margin:0;font-size:13px;font-weight:600;color:#64748b;">ESTIMATION MÉDIANE</p><p class="big-price">{mediane} €</p></div>', unsafe_allow_html=True)
-            with col2: st.markdown(f'<div class="metric-box"><p style="margin:0;font-size:13px;font-weight:600;color:#64748b;">VALEUR HAUTE</p><p class="big-price" style="color:#10b981;">{plafond} €</p></div>', unsafe_allow_html=True)
-            with col3: st.markdown(f'<div class="metric-box"><p style="margin:0;font-size:13px;font-weight:600;color:#64748b;">SEUIL PLANCHER</p><p class="big-price" style="color:#ef4444;">{plancher} €</p></div>', unsafe_allow_html=True)
-            
-            st.write(" ")
-            st.dataframe(df, use_container_width=True)
-        else:
-            st.warning("Aucun résultat récent trouvé pour cette recherche.")
+if st.button("🚀 Extraire la valeur et calculer l'argus", type="primary", use_container_width=True):
+    resultats = fetch_ebay_sold(query)
+    if resultats:
+        df = pd.DataFrame(resultats)
+        st.write(f"Médiane : {round(np.median(df['Prix (€)']), 2)} €")
+        st.dataframe(df, use_container_width=True)
+    if univers == "🎵 Disques & Vinyles":
+        st.subheader("Base Discogs")
+        st.dataframe(pd.DataFrame(fetch_discogs_api(query)))
