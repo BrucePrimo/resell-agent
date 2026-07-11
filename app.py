@@ -19,7 +19,6 @@ st.markdown("""
 
 # --- 2. LES MOTEURS DE RECHERCHE ---
 
-# Récupération sécurisée du token Discogs dans le Cloud ou en local
 DISCOGS_TOKEN = st.secrets.get("DISCOGS_TOKEN", "")
 
 def fetch_discogs_api(keywords):
@@ -46,9 +45,6 @@ def fetch_discogs_api(keywords):
                 catno = item.get("catno", "N/C")
                 pays = item.get("country", "N/C")
                 
-                # Note pour la tarification : L'API publique Discogs Database ne donne pas les prix en direct 
-                # pour éviter le siphonnage, on simule une estimation de base basée sur la rareté ou l'argus
-                # que l'on va croiser ou compléter au besoin.
                 ventes.append({
                     "Plateforme": "Discogs API",
                     "Titre": titre,
@@ -111,7 +107,6 @@ with st.sidebar:
 st.title("⚡ ResellAgent IA")
 st.subheader("Analyse de valeur en temps réel et identification d'éditions")
 
-# Ajustement de la valeur par défaut selon l'univers choisi
 default_search = "Tramber La Grande Souris Noire" if univers == "📚 Bandes Dessinées" else "Prince Purple Rain Original"
 query = st.text_input("Recherche (Titre, Code-barres, Numéro de matrice, Artiste...) :", value=default_search)
 bouton_analyser = st.button("🚀 Lancer l'analyse sectorielle", type="primary")
@@ -120,7 +115,6 @@ if bouton_analyser and query:
     with st.spinner("🔄 Traitement de la requête et requêtage des API en cours..."):
         
         if univers == "📚 Bandes Dessinées":
-            # --- BRANCHE BD ---
             resultats = []
             resultats.extend(fetch_delcampe(query))
             resultats.extend(fetch_rakuten(query))
@@ -153,14 +147,12 @@ if bouton_analyser and query:
             if resultats_vinyles:
                 st.success(f"🎯 {len(resultats_vinyles)} pressages officiels répertoriés trouvés dans la base mondiale Discogs :")
                 
-                # Affichage des pressages sous forme de fiches claires pour le terrain
                 for v in resultats_vinyles:
                     with st.expander(f"🎵 {v['Titre']} ({v['Année']})"):
                         st.markdown(f"**Label / Pressage :** {v['Édition / Label']}")
                         st.markdown(f"**Pays d'origine :** {v['Info Complémentaire']}")
-                        st.markdown(f"<span class="vinyl-spec">Format: 12\" LP</span><span class="vinyl-spec">Identification validée ✅</span>", unsafe_allow_html=True)
+                        st.markdown('<span class="vinyl-spec">Format: 12" LP</span><span class="vinyl-spec">Identification validée ✅</span>', unsafe_allow_html=True)
                 
-                # Transformation en tableau pour l'export Excel de stock
                 df_v = pd.DataFrame(resultats_vinyles)
                 output = BytesIO()
                 with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -175,4 +167,4 @@ if bouton_analyser and query:
                     use_container_width=True
                 )
             else:
-                st.warning("⚠️ Aucun pressage trouvé sur Discogs. Vérifie l'orthographe ou le numéro de catalogue inscrit sur la pochette (ex: Oved 138, Warner 925...).")
+                st.warning("⚠️ Aucun pressage trouvé sur Discogs. Vérifie l'orthographe ou le numéro de catalogue inscrit sur la pochette.")
