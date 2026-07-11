@@ -50,11 +50,11 @@ def fetch_ebay_sold(keywords):
 st.title(f"{ICONE_APPLI} {NOM_APPLI}")
 st.markdown(f"<p style='color:#64748b; font-size:16px; margin-top:-15px; margin-bottom:25px;'>{SOUS_TITRE}</p>", unsafe_allow_html=True)
 
-# Bloc Micro de dictée vocale
+# Bloc Micro de dictée vocale épuré
 st.write("🎙️ **Cliquez ci-dessous pour dicter l'objet à haute voix :**")
-texte_dicte = speech_to_text(language='fr', start_prompt="▶️ Lancer l'écoute", stop_prompt="⏹️ Arrêter", justify='center', key='dictation')
+texte_dicte = speech_to_text(language='fr', start_prompt="▶️ Lancer l'écoute", stop_prompt="⏹️ Arrêter", key='dictation')
 
-# Champ de texte qui se remplit automatiquement avec la voix
+# Champ de texte mis à jour
 if texte_dicte:
     st.success(f"🗣️ Compris : **{texte_dicte}**")
     query = st.text_input("Texte de recherche actuel :", value=texte_dicte)
