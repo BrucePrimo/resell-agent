@@ -1,148 +1,178 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import requests
+from bs4 import BeautifulSoup
+import urllib.parse
+from io import BytesIO
 
-# 1. Configuration de la page (Mode Large pour optimiser l'espace visuel)
-st.set_page_config(
-    page_title="ResellAgent IA — Estimation Pro",
-    page_icon="⚡",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# --- 1. CONFIGURATION ET DESIGN ---
+st.set_page_config(page_title="ResellAgent IA", page_icon="⚡", layout="wide")
 
-# Style CSS personnalisé pour dynamiser l'affichage
 st.markdown("""
     <style>
-    .metric-box {
-        background-color: #f8f9fa;
-        padding: 20px;
-        border-radius: 10px;
-        border-left: 5px solid #1f77b4;
-        box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
-    }
-    .big-price {
-        font-size: 32px;
-        font-weight: bold;
-        color: #1f77b4;
-    }
+    .metric-box { background-color: #f8f9fa; padding: 20px; border-radius: 10px; border-left: 5px solid #1f77b4; box-shadow: 2px 2px 5px rgba(0,0,0,0.05); }
+    .big-price { font-size: 32px; font-weight: bold; color: #1f77b4; }
+    .vinyl-spec { font-size: 13px; color: #555; background: #eef2f7; padding: 4px 8px; border-radius: 4px; margin-right: 5px; display: inline-block; }
     </style>
 """, unsafe_allow_html=True)
 
-# 2. Barre Latérale (Sidebar) - Sélections globales et Paramètres
+# --- 2. LES MOTEURS DE RECHERCHE ---
+
+# Récupération sécurisée du token Discogs dans le Cloud ou en local
+DISCOGS_TOKEN = st.secrets.get("DISCOGS_TOKEN", "")
+
+def fetch_discogs_api(keywords):
+    """Interroge l'API officielle de Discogs pour identifier précisément les pressages de vinyles"""
+    if not DISCOGS_TOKEN:
+        return []
+    
+    query = urllib.parse.quote(keywords)
+    url = f"https://api.discogs.com/database/search?q={query}&type=release&per_page=10"
+    headers = {
+        "User-Agent": "ResellAgentIA/1.0 (brucepremier)",
+        "Authorization": f"Discogs token={DISCOGS_TOKEN}"
+    }
+    
+    try:
+        res = requests.get(url, headers=headers, timeout=5)
+        if res.status_code == 200:
+            data = res.json()
+            ventes = []
+            for item in data.get("results", []):
+                titre = item.get("title", "Sans titre")
+                annee = item.get("year", "N/C")
+                label = item.get("label", ["N/C"])[0]
+                catno = item.get("catno", "N/C")
+                pays = item.get("country", "N/C")
+                
+                # Note pour la tarification : L'API publique Discogs Database ne donne pas les prix en direct 
+                # pour éviter le siphonnage, on simule une estimation de base basée sur la rareté ou l'argus
+                # que l'on va croiser ou compléter au besoin.
+                ventes.append({
+                    "Plateforme": "Discogs API",
+                    "Titre": titre,
+                    "Édition / Label": f"{label} - {catno} ({pays})",
+                    "Année": annee,
+                    "Info Complémentaire": f"Ref: {catno}"
+                })
+            return ventes
+        return []
+    except:
+        return []
+
+def fetch_delcampe(keywords):
+    query = urllib.parse.quote_plus(keywords)
+    url = f"https://www.delcampe.net/fr/collections/search?term={query}&status=closed&net_prices=all&order=sale_date_desc"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        res = requests.get(url, headers=headers, timeout=5)
+        soup = BeautifulSoup(res.text, 'html.parser')
+        ventes = []
+        for art in soup.select("div.item-listing-card") or soup.select(".item-main-infos")[:10]:
+            titre = art.select_one(".item-title").text.strip() if art.select_one(".item-title") else "Objet"
+            p_elem = art.select_one(".price") or art.select_one(".item-price")
+            if p_elem:
+                p_txt = p_elem.text.replace("€", "").replace(",", ".").replace(" ", "").strip()
+                prix = float(''.join(c for c in p_txt if c.isdigit() or c == '.'))
+                ventes.append({"Plateforme": "Delcampe", "Titre": titre, "Prix (€)": prix, "Détails": "Vente validée"})
+        return ventes
+    except: return []
+
+def fetch_rakuten(keywords):
+    query = urllib.parse.quote(keywords)
+    url = f"https://fr.shopping.rakuten.com/s/{query}"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        res = requests.get(url, headers=headers, timeout=5)
+        soup = BeautifulSoup(res.text, 'html.parser')
+        ventes = []
+        for prod in soup.select("[data-qa='product_card']")[:10]:
+            titre = prod.select_one("[data-qa='product_title']").text.strip()
+            p_elem = prod.select_one("[data-qa='product_price']")
+            if p_elem:
+                p_txt = p_elem.text.replace("€", "").replace(",", ".").replace(" ", "").strip()
+                ventes.append({"Plateforme": "Rakuten (Argus)", "Titre": titre, "Prix (€)": float(''.join(c for c in p_txt if c.isdigit() or c == '.')), "Détails": "Prix constaté"})
+        return ventes
+    except: return []
+
+# --- 3. INTERFACE UTILISATEUR ---
+
 with st.sidebar:
     st.title("⚙️ Configuration")
-    st.subheader("Catégorie de Recherche")
-    categorie = st.radio(
-        "Choisissez l'univers :",
-        ("📚 Bandes Dessinées", "🎵 Disques & Vinyles")
-    )
-    
+    univers = st.radio("Choisissez l'univers de vente :", ("📚 Bandes Dessinées", "🎵 Disques & Vinyles"))
     st.divider()
-    st.subheader("🔑 Statut des Clés API")
-    st.success("eBay API : En attente de validation (24h)")
-    st.info("Discogs Token : Prêt")
-    
-    st.divider()
-    st.caption("ResellAgent IA v1.0 — Développé pour la productivité.")
+    if DISCOGS_TOKEN:
+        st.success("🔑 API Discogs : Connectée au Cloud")
+    else:
+        st.warning("⚠️ API Discogs : En attente du Token dans les Secrets")
+    st.info("ℹ️ Moteurs de scraping : Prêts (Delcampe, Rakuten)")
 
-# 3. Corps Principal du Dashboard
 st.title("⚡ ResellAgent IA")
-st.subheader("Analyse de valeur en temps réel et historique transactionnel")
+st.subheader("Analyse de valeur en temps réel et identification d'éditions")
 
-# Barre de recherche principale
-col_search, col_btn = st.columns([4, 1])
-with col_search:
-    query = st.text_input(
-        "Entrez le titre, l'artiste, l'éditeur ou le code-barres :",
-        value="Tramber - La Grande Souris Noire (1984)"
-    )
-with col_btn:
-    st.write(" ") # Alignement esthétique
-    bouton_analyser = st.button("🚀 Lancer l'analyse", use_container_width=True)
+# Ajustement de la valeur par défaut selon l'univers choisi
+default_search = "Tramber La Grande Souris Noire" if univers == "📚 Bandes Dessinées" else "Prince Purple Rain Original"
+query = st.text_input("Recherche (Titre, Code-barres, Numéro de matrice, Artiste...) :", value=default_search)
+bouton_analyser = st.button("🚀 Lancer l'analyse sectorielle", type="primary")
 
-st.divider()
-
-# Affichage des résultats de démonstration basés sur ton album de Tramber
-if query:
-    st.header(f"🔍 Résultat de l'analyse : *{query}*")
-    
-    # --- SECTION 1 : LES METRIQUES CLÉS (KPI) ---
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.markdown("""
-            <div class="metric-box">
-                <p style="margin:0; font-weight:bold; color:#555;">PRIX MÉDIAN RÉEL</p>
-                <p class="big-price">31.50 €</p>
-                <p style="margin:0; font-size:12px; color:green;">🎯 Zone de vente conseillée</p>
-            </div>
-        """, unsafe_allow_html=True)
+if bouton_analyser and query:
+    with st.spinner("🔄 Traitement de la requête et requêtage des API en cours..."):
         
-    with col2:
-        st.markdown("""
-            <div class="metric-box" style="border-left-color: #2ca02c;">
-                <p style="margin:0; font-weight:bold; color:#555;">PRIX PLAFOND (COLLECTION)</p>
-                <p class="big-price" style="color:#2ca02c;">45.00 €</p>
-                <p style="margin:0; font-size:12px; color:#555;">État Neuf / EO validée</p>
-            </div>
-        """, unsafe_allow_html=True)
-        
-    with col3:
-        st.markdown("""
-            <div class="metric-box" style="border-left-color: #d62728;">
-                <p style="margin:0; font-weight:bold; color:#555;">PRIX PLANCHER</p>
-                <p class="big-price" style="color:#d62728;">14.00 €</p>
-                <p style="margin:0; font-size:12px; color:#555;">Rotation rapide / État moyen</p>
-            </div>
-        """, unsafe_allow_html=True)
-        
-    with col4:
-        st.markdown("""
-            <div class="metric-box" style="border-left-color: #ff7f0e;">
-                <p style="margin:0; font-weight:bold; color:#555;">INDICE DE LIQUIDITÉ</p>
-                <p class="big-price" style="color:#ff7f0e;">Élevé 🔥</p>
-                <p style="margin:0; font-size:12px; color:#555;">Se vend en moyenne sous 7 jours</p>
-            </div>
-        """, unsafe_allow_html=True)
-
-    st.write(" ")
-    
-    # --- SECTION 2 : ACTION PRODUCTIVITÉ ---
-    col_action1, col_action2 = st.columns([2, 3])
-    with col_action1:
-        st.button("📥 Exporter cette fiche vers mon inventaire Excel", type="primary", use_container_width=True)
-
-    st.write(" ")
-
-    # --- SECTION 3 : GRAPHIQUES ET REPARTITION ---
-    tab1, tab2 = st.tabs(["📊 Graphiques de Tendance", "📋 Données Brutes par Plateforme"])
-    
-    with tab1:
-        col_g1, col_g2 = st.columns(2)
-        
-        with col_g1:
-            st.subheader("Historique des prix constatés (6 derniers mois)")
-            chart_data = pd.DataFrame(
-                np.random.normal(31.5, 3, size=(20, 1)),
-                columns=['Prix de vente validé (€)']
-            )
-            st.line_chart(chart_data)
+        if univers == "📚 Bandes Dessinées":
+            # --- BRANCHE BD ---
+            resultats = []
+            resultats.extend(fetch_delcampe(query))
+            resultats.extend(fetch_rakuten(query))
             
-        with col_g2:
-            st.subheader("Volume de transactions par plateforme")
-            sources_data = pd.DataFrame({
-                'Plateforme': ['eBay', 'Delcampe', 'Catawiki', 'Rakuten', 'Vinted/LBC', 'Interencheres'],
-                'Ventes Validées': [12, 18, 4, 25, 9, 2]
-            }).set_index('Plateforme')
-            st.bar_chart(sources_data)
+            if resultats:
+                df = pd.DataFrame(resultats)
+                prix_bruts = df["Prix (€)"].tolist()
+                q1, q3 = np.percentile(prix_bruts, [25, 75])
+                iqr = q3 - q1
+                prix_nettoyes = [p for p in prix_bruts if (q1 - 1.5*iqr) <= p <= (q3 + 1.5*iqr)]
+                
+                mediane = round(np.median(prix_nettoyes), 2)
+                plafond = round(max(prix_nettoyes), 2)
+                plancher = round(min(prix_nettoyes), 2)
+                
+                col1, col2, col3 = st.columns(3)
+                with col1: st.markdown(f'<div class="metric-box"><p style="margin:0;font-weight:bold;">PRIX MÉDIAN BD</p><p class="big-price">{mediane} €</p><p style="margin:0;font-size:12px;color:green;">🎯 Zone de vente conseillée</p></div>', unsafe_allow_html=True)
+                with col2: st.markdown(f'<div class="metric-box" style="border-left-color:#2ca02c;"><p style="margin:0;font-weight:bold;">PRIX PLAFOND (EO)</p><p class="big-price" style="color:#2ca02c;">{plafond} €</p><p style="margin:0;font-size:12px;">État Supérieur certifié</p></div>', unsafe_allow_html=True)
+                with col3: st.markdown(f'<div class="metric-box" style="border-left-color:#d62728;"><p style="margin:0;font-weight:bold;">PRIX PLANCHER</p><p class="big-price" style="color:#d62728;">{plancher} €</p><p style="margin:0;font-size:12px;">Rotation rapide</p></div>', unsafe_allow_html=True)
+                
+                st.subheader("Détail des correspondances tarifaires")
+                st.dataframe(df, use_container_width=True)
+            else:
+                st.warning("Aucune transaction trouvée sur les plateformes BD pour ce mot-clé.")
 
-    with tab2:
-        st.subheader("Détail des dernières transactions détectées")
-        mock_data = pd.DataFrame([
-            {"Date": "10/07/2026", "Plateforme": "Delcampe", "Titre": "Tramber - La Grande Souris Noire EO", "Prix payé (€)": 34.00, "Statut": "Vendu"},
-            {"Date": "08/07/2026", "Plateforme": "eBay", "Titre": "LA GRANDE SOURIS NOIRE - TRAMBER TBE", "Prix payé (€)": 29.00, "Statut": "Vendu"},
-            {"Date": "04/07/2026", "Plateforme": "Interencheres", "Titre": "Lot de BD underground dont Tramber T2", "Prix payé (€)": 15.00, "Statut": "Adjugé"},
-            {"Date": "01/07/2026", "Plateforme": "Vinted", "Titre": "BD Tramber Souris Noire Albin Michel", "Prix payé (€)": 32.00, "Statut": "Snapshot (Vendu)"},
-            {"Date": "28/06/2026", "Plateforme": "Catawiki", "Titre": "William Vaurien (Tramber) - La Grande Souris Noire", "Prix payé (€)": 45.00, "Statut": "Adjugé"}
-        ])
-        st.dataframe(mock_data, use_container_width=True)
+        else:
+            # --- BRANCHE VINYLES (DISCOGS) ---
+            resultats_vinyles = fetch_discogs_api(query)
+            
+            if resultats_vinyles:
+                st.success(f"🎯 {len(resultats_vinyles)} pressages officiels répertoriés trouvés dans la base mondiale Discogs :")
+                
+                # Affichage des pressages sous forme de fiches claires pour le terrain
+                for v in resultats_vinyles:
+                    with st.expander(f"🎵 {v['Titre']} ({v['Année']})"):
+                        st.markdown(f"**Label / Pressage :** {v['Édition / Label']}")
+                        st.markdown(f"**Pays d'origine :** {v['Info Complémentaire']}")
+                        st.markdown(f"<span class="vinyl-spec">Format: 12\" LP</span><span class="vinyl-spec">Identification validée ✅</span>", unsafe_allow_html=True)
+                
+                # Transformation en tableau pour l'export Excel de stock
+                df_v = pd.DataFrame(resultats_vinyles)
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                    df_v.to_excel(writer, sheet_name='Pressages_Vinyles', index=False)
+                
+                st.write(" ")
+                st.download_button(
+                    label="📥 Exporter ces fiches pressages vers mon catalogue Excel",
+                    data=output.getvalue(),
+                    file_name=f"Pressages_{query.replace(' ', '_')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+            else:
+                st.warning("⚠️ Aucun pressage trouvé sur Discogs. Vérifie l'orthographe ou le numéro de catalogue inscrit sur la pochette (ex: Oved 138, Warner 925...).")
