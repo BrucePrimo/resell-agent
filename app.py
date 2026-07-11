@@ -9,7 +9,7 @@ import google.generativeai as genai
 from PIL import Image
 
 # ==============================================================================
-# 🎛️ PANNEAU DE CONTRÔLE DESIGN 
+# 🎛️ PANNEAU DE CONTRÔLE DESIGN - CONFIGURATION VALIDÉE
 # ==============================================================================
 NOM_APPLI    = "Primo Bruce 1 system"    
 ICONE_APPLI  = "⚡"                      
@@ -47,13 +47,14 @@ if GEMINI_API_KEY:
 # --- 2. LES MOTEURS DE RECHERCHE ---
 
 def analyser_image_via_gemini(image_bytes, univers_selectionne):
-    """Utilise Gemini 1.5 Flash pour identifier l'objet et générer les mots-clés optimaux"""
+    """Utilise Gemini 1.5 Flash avec la syntaxe exacte exigée par l'API"""
     if not GEMINI_API_KEY:
         st.error("Clé API Gemini manquante dans les Secrets.")
         return ""
     try:
         image = Image.open(BytesIO(image_bytes))
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # Correction de la syntaxe du modèle ici :
+        model = genai.GenerativeModel('models/gemini-1.5-flash')
         
         prompt = f"""
         Tu es un expert mondial en revente d'objets d'occasion et de collection.
@@ -152,17 +153,14 @@ with st.sidebar:
     )
     st.divider()
     if GEMINI_API_KEY: st.success("👁️ Vision IA Gemini : Activée")
-    else: st.warning("👁️ Vision IA Gemini : Clé manquante")
     if DISCOGS_TOKEN: st.success("🔑 API Discogs : Connectée")
 
 st.title(f"{ICONE_APPLI} {NOM_APPLI}")
 st.markdown(f"<p style='color:#64748b; font-size:16px; margin-top:-15px; margin-bottom:25px;'>{SOUS_TITRE}</p>", unsafe_allow_html=True)
 
-# Initialisation de la session pour stocker le mot-clé trouvé par l'image
 if "search_query" not in st.session_state:
     st.session_state.search_query = ""
 
-# --- MODULE PHOTO RECONNAISSANCE VISUELLE ---
 expander_camera = st.expander("📷 Déclencher la reconnaissance par Appareil Photo / Image", expanded=False)
 with expander_camera:
     photo_recue = st.camera_input("Prends une photo de l'objet (Couverture, Cadran, Pochette...)")
@@ -174,10 +172,8 @@ with expander_camera:
                 st.session_state.search_query = mots_cles_ia
                 st.success(f"🎯 Objet identifié par l'IA : **{mots_cles_ia}**")
 
-# Case de recherche (remplie automatiquement par la photo ou modifiable à la main)
 query = st.text_input("Texte de recherche actuel :", value=st.session_state.search_query if st.session_state.search_query else "")
 
-# --- ACCÈS DIRECTS TERRAIN ---
 encoded_query = urllib.parse.quote(query) if query else ""
 url_lbc = f"https://www.leboncoin.fr/recherche?text={encoded_query}"
 url_vinted = f"https://www.vinted.fr/catalog?search_text={encoded_query}"
@@ -187,7 +183,7 @@ url_chrono24 = f"https://www.chrono24.fr/search/index.htm?query={encoded_query}"
 if query:
     st.write("🔍 **Vérification rapide des catalogues en cours :**")
     cols_btn = st.columns(4)
-    with cols_btn[0]: st.markdown(f'<a href="{url_lbc}" target="_blank" style="text-decoration:none;"><button style="width:100%; height:38px; background-color:#ff6e14; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">Core 🟠 LeBonCoin</button></a>', unsafe_allow_html=True)
+    with cols_btn[0]: st.markdown(f'<a href="{url_lbc}" target="_blank" style="text-decoration:none;"><button style="width:100%; height:38px; background-color:#ff6e14; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">🟠 LeBonCoin</button></a>', unsafe_allow_html=True)
     with cols_btn[1]: st.markdown(f'<a href="{url_vinted}" target="_blank" style="text-decoration:none;"><button style="width:100%; height:38px; background-color:#09b1ba; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">🟢 Vinted</button></a>', unsafe_allow_html=True)
     with cols_btn[2]: st.markdown(f'<a href="{url_catawiki}" target="_blank" style="text-decoration:none;"><button style="width:100%; height:38px; background-color:#1434cb; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">🔵 Catawiki</button></a>', unsafe_allow_html=True)
     if univers == "⌚ Montres de Collection":
