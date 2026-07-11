@@ -6,83 +6,101 @@ from bs4 import BeautifulSoup
 import urllib.parse
 from streamlit_mic_recorder import speech_to_text
 
-# --- CONFIGURATION ET DESIGN ---
-NOM_APPLI    = "Primo Bruce 1 system"    
-ICONE_APPLI  = "⚡"                      
-SOUS_TITRE   = "Expertise Argus & Estimations de Marché Professionnelles"
-COULEUR_PRINCIPALE = "#1E293B"          
+# Configuration de la page
+st.set_page_config(page_title="Primo Bruce 1 System", layout="wide", page_icon="⚡")
 
-st.set_page_config(page_title=NOM_APPLI, page_icon=ICONE_APPLI, layout="wide")
-
-st.markdown(f"""
+# Style CSS pour une interface propre
+st.markdown("""
     <style>
-    html, body, [class*="css"], p, div, button, input, label {{ font-family: 'Roboto', sans-serif !important; }}
-    .metric-box {{ background-color: #ffffff; padding: 22px; border-radius: 8px; border: 1px solid #e2e8f0; border-top: 4px solid {COULEUR_PRINCIPALE}; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }}
-    .big-price {{ font-size: 34px; font-weight: 700; color: {COULEUR_PRINCIPALE}; margin-top: 5px; margin-bottom: 5px; }}
-    div.stButton > button:first-child {{ background-color: {COULEUR_PRINCIPALE}; color: white; border: none; border-radius: 6px; font-weight: 600; }}
+    .metric-box { background-color: #f8fafc; padding: 20px; border-radius: 10px; border: 1px solid #e2e8f0; }
+    .header-style { font-size: 20px; font-weight: bold; color: #1e293b; margin-bottom: 10px; }
     </style>
 """, unsafe_allow_html=True)
 
 DISCOGS_TOKEN = st.secrets.get("DISCOGS_TOKEN", "")
 
-# --- FONCTIONS DE RECHERCHE ---
-def fetch_discogs_api(keywords):
-    if not DISCOGS_TOKEN: return []
-    query = urllib.parse.quote(keywords)
-    url = f"https://api.discogs.com/database/search?q={query}&type=release&per_page=8"
-    headers = {"User-Agent": "ResellAgentIA/1.0", "Authorization": f"Discogs token={DISCOGS_TOKEN}"}
-    try:
-        res = requests.get(url, headers=headers, timeout=5)
-        if res.status_code == 200:
-            return [{"Plateforme": "Discogs API", "Titre": item.get("title"), "Année": item.get("year", "N/C")} for item in res.json().get("results", [])]
-        return []
-    except: return []
+# --- FONCTIONS DE RÉCUPÉRATION ---
 
-def fetch_ebay_sold(keywords):
-    query = urllib.parse.quote(keywords)
-    url = f"https://www.ebay.fr/sch/i.html?_nkw={query}&LH_Complete=1&LH_Sold=1"
-    headers = {"User-Agent": "Mozilla/5.0"}
+def get_ebay_sold(keywords):
+    url = f"https://www.ebay.fr/sch/i.html?_nkw={urllib.parse.quote(keywords)}&LH_Complete=1&LH_Sold=1"
     try:
-        res = requests.get(url, headers=headers, timeout=5)
+        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
         soup = BeautifulSoup(res.text, 'html.parser')
-        ventes = []
-        for item in soup.select(".s-item")[:10]:
-            title_elem = item.select_one(".s-item__title")
-            price_elem = item.select_one(".s-item__price")
-            if title_elem and price_elem:
-                title = title_elem.text.replace("Nouvelle annonce", "").strip()
-                p_txt = price_elem.text.replace("EUR", "").replace("€", "").replace(",", ".").replace(" ", "").strip()
-                try:
-                    prix = float(''.join(c for c in p_txt if c.isdigit() or c == '.'))
-                    ventes.append({"Plateforme": "eBay (Vendu)", "Titre": title, "Prix (€)": prix})
-                except: pass
-        return ventes
+        data = []
+        for item in soup.select(".s-item")[:5]:
+            title = item.select_one(".s-item__title").text.replace("Nouvelle annonce", "").strip()
+            price = item.select_one(".s-item__price").text.replace("EUR", "").replace("€", "").replace(",", ".").split("à")[0].strip()
+            data.append({"Titre": title, "Prix (€)": float(''.join(c for c in price if c.isdigit() or c == '.'))})
+        return data
     except: return []
 
-# --- INTERFACE ---
+def get_rakuten_delcampe(keywords):
+    data = []
+    # Rakuten
+    url_r = f"https://fr.shopping.rakuten.com/s/{urllib.parse.quote(keywords)}"
+    try:
+        res = requests.get(url_r, headers={"User-Agent": "Mozilla/5.0"}, timeout=3)
+        soup = BeautifulSoup(res.text, 'html.parser')
+        for prod in soup.select("[data-qa='product_card']")[:3]:
+            title = prod.select_one("[data-qa='product_title']").text.strip()
+            price = prod.select_one("[data-qa='product_price']").text.replace("€", "").replace(",", ".").strip()
+            data.append({"Plateforme": "Rakuten", "Titre": title, "Prix (€)": float(''.join(c for c in price if c.isdigit() or c == '.'))})
+    except: pass
+    return data
+
+def get_discogs_data(keywords):
+    if not DISCOGS_TOKEN: return []
+    url = f"https://api.discogs.com/database/search?q={urllib.parse.quote(keywords)}&type=release&per_page=5"
+    try:
+        res = requests.get(url, headers={"Authorization": f"Discogs token={DISCOGS_TOKEN}"}, timeout=5)
+        results = []
+        for item in res.json().get("results", []):
+            rel_id = item.get("id")
+            price_stat = requests.get(f"https://api.discogs.com/marketplace/price_statistics/{rel_id}", headers={"Authorization": f"Discogs token={DISCOGS_TOKEN}"}).json()
+            price = price_stat.get('lowest_price', {}).get('value', 0)
+            results.append({"Titre": item.get("title"), "Prix (€)": float(price)})
+        return results
+    except: return []
+
+# --- INTERFACE UTILISATEUR ---
+
+st.title("⚡ Primo Bruce 1 System")
+
 with st.sidebar:
-    st.title("⚙️ Secteurs de Veille")
-    univers = st.radio("Univers :", ("📚 Bandes Dessinées", "🎵 Disques & Vinyles", "🏺 Objets de Collection & Mag", "⌚ Montres de Collection"))
+    st.header("⚙️ Paramètres")
+    univers = st.radio("Univers de recherche :", ("📚 Bandes Dessinées", "🎵 Disques & Vinyles", "🏺 Objets de Collection", "⌚ Montres"))
 
-st.title(f"{ICONE_APPLI} {NOM_APPLI}")
+# Entrée unifiée
+text_in = speech_to_text(language='fr', start_prompt="▶️ Lancer l'écoute", stop_prompt="⏹️ Arrêter", key='stt')
+query = st.text_input("Recherche manuelle ou vocale :", value=text_in if text_in else "")
 
-# Dictée vocale + saisie clavier combinées
-st.write("🎙️ **Dicter ou saisir l'objet :**")
-texte_dicte = speech_to_text(language='fr', start_prompt="▶️ Lancer l'écoute", stop_prompt="⏹️ Arrêter", key='dictation')
-query = st.text_input("Saisir ou modifier le texte :", value=texte_dicte if texte_dicte else "")
+if st.button("🚀 Lancer l'analyse complète", type="primary"):
+    if query:
+        # 1. eBay Section
+        st.markdown('<p class="header-style">🟠 eBay (Ventes conclues)</p>', unsafe_allow_html=True)
+        ebay_data = get_ebay_sold(query)
+        if ebay_data: st.dataframe(pd.DataFrame(ebay_data), use_container_width=True)
+        else: st.info("Aucune vente eBay trouvée.")
 
-if query:
-    encoded_query = urllib.parse.quote(query)
-    cols_btn = st.columns(4)
-    with cols_btn[0]: st.markdown(f'<a href="https://www.leboncoin.fr/recherche?text={encoded_query}" target="_blank"><button style="width:100%; height:38px; background-color:#ff6e14; color:white; border:none; border-radius:4px; font-weight:bold;">🟠 LeBonCoin</button></a>', unsafe_allow_html=True)
-    with cols_btn[1]: st.markdown(f'<a href="https://www.vinted.fr/catalog?search_text={encoded_query}" target="_blank"><button style="width:100%; height:38px; background-color:#09b1ba; color:white; border:none; border-radius:4px; font-weight:bold;">🟢 Vinted</button></a>', unsafe_allow_html=True)
+        # 2. Rakuten Section
+        st.markdown('<p class="header-style">🟢 Rakuten & Autres</p>', unsafe_allow_html=True)
+        other_data = get_rakuten_delcampe(query)
+        if other_data: st.dataframe(pd.DataFrame(other_data), use_container_width=True)
+        else: st.info("Aucun résultat Rakuten.")
 
-if st.button("🚀 Extraire la valeur et calculer l'argus", type="primary", use_container_width=True):
-    resultats = fetch_ebay_sold(query)
-    if resultats:
-        df = pd.DataFrame(resultats)
-        st.write(f"Médiane : {round(np.median(df['Prix (€)']), 2)} €")
-        st.dataframe(df, use_container_width=True)
-    if univers == "🎵 Disques & Vinyles":
-        st.subheader("Base Discogs")
-        st.dataframe(pd.DataFrame(fetch_discogs_api(query)))
+        # 3. Discogs Section
+        if univers == "🎵 Disques & Vinyles":
+            st.markdown('<p class="header-style">🎵 Discogs (Marché)</p>', unsafe_allow_html=True)
+            disc_data = get_discogs_data(query)
+            if disc_data: st.dataframe(pd.DataFrame(disc_data), use_container_width=True)
+            else: st.info("Aucune donnée Discogs.")
+
+        # 4. Synthèse Globale
+        st.divider()
+        st.header("🎯 Synthèse des prix")
+        all_prices = [d['Prix (€)'] for d in ebay_data] + [d['Prix (€)'] for d in other_data]
+        if all_prices:
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Médiane", f"{np.median(all_prices):.2f} €")
+            col2.metric("Prix Max", f"{max(all_prices):.2f} €")
+            col3.metric("Prix Min", f"{min(all_prices):.2f} €")
