@@ -2,21 +2,17 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import requests
-from bs4 import BeautifulSoupP
+from bs4 import BeautifulSoup
 import urllib.parse
 from io import BytesIO
 
 # ==============================================================================
-# 🎛️ PANNEAU DE CONTRÔLE DESIGN - MODIFIE TON APPLICATION ICI !
+# 🎛️ PANNEAU DE CONTRÔLE DESIGN - CONFIGURATION MISE À JOUR (AMÉRICAINE)
 # ==============================================================================
-NOM_APPLI    = "Primo Bruce 1 System "   # Ton nom personnalisé
-ICONE_APPLI  = "🏻"                    # Colle l'émoji de ton choix ici
+NOM_APPLI    = "Primo Bruce 1 system"    # Écriture système à l'américaine validée
+ICONE_APPLI  = "⚡"                      # Logo éclair conservé
 SOUS_TITRE   = "Expertise Argus & Estimations de Marché"
-
-# COULEUR : Mets le code couleur de ton choix (ex: #1E293B, #78350F, #0F766E...)
 COULEUR_PRINCIPALE = "#1E293B"          
-
-# TYPOGRAPHIE : Choisis entre "Inter", "Roboto", "Playfair Display", "Georgia", ou "System-UI"
 POLICE_CARACTERE = "Roboto"              
 # ==============================================================================
 
@@ -157,7 +153,7 @@ st.write("🔍 **Vérification rapide des catalogues en cours :**")
 cols_btn = st.columns(4)
 
 with cols_btn[0]:
-    st.markdown(f'<a href="{url_lbc}" target="_blank" style="text-decoration:none;"><button style="width:100%; height:38px; background-color:#ff6e14; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">Core 🟠 LeBonCoin</button></a>', unsafe_allow_html=True)
+    st.markdown(f'<a href="{url_lbc}" target="_blank" style="text-decoration:none;"><button style="width:100%; height:38px; background-color:#ff6e14; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">🟠 LeBonCoin</button></a>', unsafe_allow_html=True)
 
 with cols_btn[1]:
     st.markdown(f'<a href="{url_vinted}" target="_blank" style="text-decoration:none;"><button style="width:100%; height:38px; background-color:#09b1ba; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">🟢 Vinted</button></a>', unsafe_allow_html=True)
