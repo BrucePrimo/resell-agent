@@ -5,13 +5,15 @@ import requests
 from bs4 import BeautifulSoup
 import urllib.parse
 from io import BytesIO
+import google.generativeai as genai
+from PIL import Image
 
 # ==============================================================================
-# 🎛️ PANNEAU DE CONTRÔLE DESIGN - CONFIGURATION MISE À JOUR (AMÉRICAINE)
+# 🎛️ PANNEAU DE CONTRÔLE DESIGN 
 # ==============================================================================
-NOM_APPLI    = "Primo Bruce 1 system"    # Écriture système à l'américaine validée
-ICONE_APPLI  = "⚡"                      # Logo éclair conservé
-SOUS_TITRE   = "Expertise Argus & Estimations de Marché"
+NOM_APPLI    = "Primo Bruce 1 system"    
+ICONE_APPLI  = "⚡"                      
+SOUS_TITRE   = "Expertise Argus & Estimations de Marché par Vision IA"
 COULEUR_PRINCIPALE = "#1E293B"          
 POLICE_CARACTERE = "Roboto"              
 # ==============================================================================
@@ -21,18 +23,13 @@ st.set_page_config(page_title=NOM_APPLI, page_icon=ICONE_APPLI, layout="wide")
 
 st.markdown(f"""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,600;1,400&family=Roboto:wght@400;500;700&display=swap');
-    
+    @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
     html, body, [class*="css"], p, div, button, input, label {{
         font-family: '{POLICE_CARACTERE}', sans-serif !important;
     }}
     .metric-box {{ 
-        background-color: #ffffff; 
-        padding: 22px; 
-        border-radius: 8px; 
-        border: 1px solid #e2e8f0;
-        border-top: 4px solid {COULEUR_PRINCIPALE}; 
-        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); 
+        background-color: #ffffff; padding: 22px; border-radius: 8px; border: 1px solid #e2e8f0;
+        border-top: 4px solid {COULEUR_PRINCIPALE}; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); 
     }}
     .big-price {{ font-size: 34px; font-weight: 700; color: {COULEUR_PRINCIPALE}; margin-top: 5px; margin-bottom: 5px; }}
     .vinyl-spec {{ font-size: 12px; color: #475569; background: #f1f5f9; padding: 4px 10px; border-radius: 6px; margin-right: 6px; display: inline-block; font-weight: 500; }}
@@ -40,9 +37,36 @@ st.markdown(f"""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. LES MOTEURS DE RECHERCHE EN LIGNE ---
-
+# --- CONFIGURATION DES CLÉS APIS (SECRETS) ---
 DISCOGS_TOKEN = st.secrets.get("DISCOGS_TOKEN", "")
+GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
+
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+
+# --- 2. LES MOTEURS DE RECHERCHE ---
+
+def analyser_image_via_gemini(image_bytes, univers_selectionne):
+    """Utilise Gemini 1.5 Flash pour identifier l'objet et générer les mots-clés optimaux"""
+    if not GEMINI_API_KEY:
+        st.error("Clé API Gemini manquante dans les Secrets.")
+        return ""
+    try:
+        image = Image.open(BytesIO(image_bytes))
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        prompt = f"""
+        Tu es un expert mondial en revente d'objets d'occasion et de collection.
+        Analyse cette photo qui appartient à la catégorie suivante : {univers_selectionne}.
+        Identifie précisément l'objet (Marque, Modèle, Édition, Artiste, Année, ou Réf si visible).
+        Renvoie UNIQUEMENT les meilleurs mots-clés textuels pour effectuer une recherche de prix sur eBay ou Delcampe.
+        Ne fais aucune phrase, ne donne aucun commentaire, écris juste les mots-clés sur une seule ligne.
+        """
+        response = model.generate_content([prompt, image])
+        return response.text.strip().replace('"', '')
+    except Exception as e:
+        st.error(f"Erreur d'analyse IA : {e}")
+        return ""
 
 def fetch_discogs_api(keywords):
     if not DISCOGS_TOKEN: return []
@@ -53,11 +77,9 @@ def fetch_discogs_api(keywords):
         res = requests.get(url, headers=headers, timeout=5)
         if res.status_code == 200:
             return [{
-                "Plateforme": "Discogs API",
-                "Titre": item.get("title", "Sans titre"),
+                "Plateforme": "Discogs API", "Titre": item.get("title", "Sans titre"),
                 "Édition / Label": f"{item.get('label', ['N/C'])[0]} - {item.get('catno', 'N/C')} ({item.get('country', 'N/C')})",
-                "Année": item.get("year", "N/C"),
-                "Info Complémentaire": f"Ref: {item.get('catno', 'N/C')}"
+                "Année": item.get("year", "N/C"), "Info Complémentaire": f"Ref: {item.get('catno', 'N/C')}"
             } for item in res.json().get("results", [])]
         return []
     except: return []
@@ -129,48 +151,53 @@ with st.sidebar:
         ("📚 Bandes Dessinées", "🎵 Disques & Vinyles", "🏺 Objets de Collection & Mag", "⌚ Montres de Collection")
     )
     st.divider()
-    st.success("🤖 Analyseurs de marché : Actifs")
-    st.info("📊 Sources indexées : eBay, Rakuten, Delcampe")
+    if GEMINI_API_KEY: st.success("👁️ Vision IA Gemini : Activée")
+    else: st.warning("👁️ Vision IA Gemini : Clé manquante")
+    if DISCOGS_TOKEN: st.success("🔑 API Discogs : Connectée")
 
 st.title(f"{ICONE_APPLI} {NOM_APPLI}")
 st.markdown(f"<p style='color:#64748b; font-size:16px; margin-top:-15px; margin-bottom:25px;'>{SOUS_TITRE}</p>", unsafe_allow_html=True)
 
-if univers == "📚 Bandes Dessinées": default_search = "Tramber La Grande Souris Noire"
-elif univers == "🎵 Disques & Vinyles": default_search = "Prince Purple Rain Original"
-elif univers == "⌚ Montres de Collection": default_search = "Seiko SKX007"
-else: default_search = "Magazine Starwax"
+# Initialisation de la session pour stocker le mot-clé trouvé par l'image
+if "search_query" not in st.session_state:
+    st.session_state.search_query = ""
 
-query = st.text_input("Saisissez un modèle, une marque, un titre ou une référence de matrice :", value=default_search)
+# --- MODULE PHOTO RECONNAISSANCE VISUELLE ---
+expander_camera = st.expander("📷 Déclencher la reconnaissance par Appareil Photo / Image", expanded=False)
+with expander_camera:
+    photo_recue = st.camera_input("Prends une photo de l'objet (Couverture, Cadran, Pochette...)")
+    if photo_recue:
+        bytes_data = photo_recue.getvalue()
+        with st.spinner("⚡ L'IA analyse les caractéristiques visuelles de l'objet..."):
+            mots_cles_ia = analyser_image_via_gemini(bytes_data, univers)
+            if mots_cles_ia:
+                st.session_state.search_query = mots_cles_ia
+                st.success(f"🎯 Objet identifié par l'IA : **{mots_cles_ia}**")
+
+# Case de recherche (remplie automatiquement par la photo ou modifiable à la main)
+query = st.text_input("Texte de recherche actuel :", value=st.session_state.search_query if st.session_state.search_query else "")
 
 # --- ACCÈS DIRECTS TERRAIN ---
-encoded_query = urllib.parse.quote(query)
+encoded_query = urllib.parse.quote(query) if query else ""
 url_lbc = f"https://www.leboncoin.fr/recherche?text={encoded_query}"
 url_vinted = f"https://www.vinted.fr/catalog?search_text={encoded_query}"
 url_catawiki = f"https://www.catawiki.com/fr/s?q={encoded_query}"
 url_chrono24 = f"https://www.chrono24.fr/search/index.htm?query={encoded_query}"
 
-st.write("🔍 **Vérification rapide des catalogues en cours :**")
-cols_btn = st.columns(4)
-
-with cols_btn[0]:
-    st.markdown(f'<a href="{url_lbc}" target="_blank" style="text-decoration:none;"><button style="width:100%; height:38px; background-color:#ff6e14; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">🟠 LeBonCoin</button></a>', unsafe_allow_html=True)
-
-with cols_btn[1]:
-    st.markdown(f'<a href="{url_vinted}" target="_blank" style="text-decoration:none;"><button style="width:100%; height:38px; background-color:#09b1ba; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">🟢 Vinted</button></a>', unsafe_allow_html=True)
-
-with cols_btn[2]:
-    st.markdown(f'<a href="{url_catawiki}" target="_blank" style="text-decoration:none;"><button style="width:100%; height:38px; background-color:#1434cb; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">🔵 Catawiki</button></a>', unsafe_allow_html=True)
-
-if univers == "⌚ Montres de Collection":
-    with cols_btn[3]:
-        st.markdown(f'<a href="{url_chrono24}" target="_blank" style="text-decoration:none;"><button style="width:100%; height:38px; background-color:#1e293b; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">⌚ Chrono24</button></a>', unsafe_allow_html=True)
+if query:
+    st.write("🔍 **Vérification rapide des catalogues en cours :**")
+    cols_btn = st.columns(4)
+    with cols_btn[0]: st.markdown(f'<a href="{url_lbc}" target="_blank" style="text-decoration:none;"><button style="width:100%; height:38px; background-color:#ff6e14; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">Core 🟠 LeBonCoin</button></a>', unsafe_allow_html=True)
+    with cols_btn[1]: st.markdown(f'<a href="{url_vinted}" target="_blank" style="text-decoration:none;"><button style="width:100%; height:38px; background-color:#09b1ba; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">🟢 Vinted</button></a>', unsafe_allow_html=True)
+    with cols_btn[2]: st.markdown(f'<a href="{url_catawiki}" target="_blank" style="text-decoration:none;"><button style="width:100%; height:38px; background-color:#1434cb; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">🔵 Catawiki</button></a>', unsafe_allow_html=True)
+    if univers == "⌚ Montres de Collection":
+        with cols_btn[3]: st.markdown(f'<a href="{url_chrono24}" target="_blank" style="text-decoration:none;"><button style="width:100%; height:38px; background-color:#1e293b; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">⌚ Chrono24</button></a>', unsafe_allow_html=True)
 
 st.write(" ")
 bouton_analyser = st.button("🚀 Extraire la valeur de l'objet et calculer l'argus", type="primary", use_container_width=True)
 
 if bouton_analyser and query:
     with st.spinner("Analyse des flux financiers en cours..."):
-        
         resultats_prix = []
         resultats_prix.extend(fetch_ebay_sold(query))
         resultats_prix.extend(fetch_rakuten(query))
