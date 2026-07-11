@@ -47,14 +47,14 @@ if GEMINI_API_KEY:
 # --- 2. LES MOTEURS DE RECHERCHE ---
 
 def analyser_image_via_gemini(image_bytes, univers_selectionne):
-    """Utilise Gemini 2.5 Flash pour éviter les conflits de versions v1beta"""
+    """Utilise Gemini 2.0 Flash, le modèle standard stable"""
     if not GEMINI_API_KEY:
         st.error("Clé API Gemini manquante dans les Secrets.")
         return ""
     try:
         image = Image.open(BytesIO(image_bytes))
-        # Utilisation du modèle de génération 2026 stable
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        # Utilisation de la version de production stable actuelle
+        model = genai.GenerativeModel('gemini-2.0-flash')
         
         prompt = f"""
         Tu es un expert mondial en revente d'objets d'occasion et de collection.
